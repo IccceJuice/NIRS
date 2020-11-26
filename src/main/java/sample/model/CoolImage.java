@@ -6,6 +6,7 @@ import com.sun.imageio.plugins.jpeg.JPEGImageWriterSpi;
 import com.sun.imageio.plugins.png.PNGImageReader;
 import com.sun.imageio.plugins.png.PNGImageWriter;
 import com.sun.imageio.plugins.png.PNGImageWriterSpi;
+import sample.utils.Utils;
 
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
@@ -22,11 +23,19 @@ public class CoolImage {
     private int     width;              // ширина изображения
     private int[]   pixels;// собственно массив цветов точек составляющих изображение
     private Color[] colors;
+    private int[][] pixelsMatrix;
+    private int[][] normPixelsMatrix;
+    BufferedImage bufferedImage;
 
     public int getPixel(int x, int y)   { return pixels[y*width+x]; }   // получить пиксель в формате RGB
     public int getRed(int color)        { return color >> 16; }         // получить красную составляющую цвета
     public int getGreen(int color)      { return (color >> 8) & 0xFF; } // получить зеленую составляющую цвета
     public int getBlue(int color)       { return color & 0xFF;}        // получить синюю составляющую цвета
+
+
+    public int[][] getNormPixelsMatrix() {
+        return normPixelsMatrix;
+    }
 
     // Конструктор - создание изображения из файла
     public CoolImage(String fileName) throws IOException {
@@ -34,6 +43,9 @@ public class CoolImage {
         this.height = img.getHeight();
         this.width  = img.getWidth();
         this.pixels = copyFromBufferedImage(img);
+        this.pixelsMatrix = Utils.convertArrayToMatrix(pixels, width);
+        this.normPixelsMatrix = pixelsToNorm(pixelsMatrix);
+
     }
 
     public int getHeight() {
@@ -57,14 +69,41 @@ public class CoolImage {
         return bi;
     }
 
-    // Формирование BufferedImage из массива pixels
-    public BufferedImage copyToBufferedImage()  {
-        BufferedImage bi = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    public int[][] pixelsToNorm(int[][] pixelsMatrix) {
+        int[][] normPixelsMatrix = new int[pixelsMatrix.length][pixelsMatrix.length];
         for (int i = 0; i < height; i++)
+            for (int j = 0; j < width; j++) {
+                // находим среднюю арифметическую интенсивность пикселя по всем цветам
+                int intens = (getRed(pixels[i * width + j]) +
+                        getGreen(pixels[i * width + j]) +
+                        getBlue(pixels[i * width + j])) / 3;
+                normPixelsMatrix[i][j] = intens;
+            }
+        return normPixelsMatrix;
+    }
+
+    public int[] setPixelFromNormalPixels(int[][] normalPixels) {
+        for (int i = 0; i < normalPixels.length; i++) {
+            for (int j = 0; j < normalPixels.length; j++) {
+                pixels[i * width + j] = normalPixels[i][j] + (normalPixels[i][j] << 8) + (normalPixels[i][j] << 16);
+                pixelsMatrix[i][j] = normalPixels[i][j] + (normalPixels[i][j] << 8) + (normalPixels[i][j] << 16);
+            }
+        }
+        return pixels;
+    }
+
+    // Формирование BufferedImage из массива pixels
+    public BufferedImage copyToBufferedImage(int[] pixels)  {
+        BufferedImage bi = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        for (int i = 0; i < height; i++) {
             for (int j = 0; j < width; j++)
-                bi.setRGB(j, i, pixels[i*width +j]);
+                bi.setRGB(j, i, pixels[i * width + j]);
+        }
+        this.bufferedImage = bi;
         return bi;
     }
+
+
 
     // Формирование массива пикселей из BufferedImage
     public int[] copyFromBufferedImage(BufferedImage bi)  {
@@ -74,9 +113,9 @@ public class CoolImage {
         for (int i = 0; i < height; i++)
             for (int j = 0; j < width; j++) {
 //                color = new Color(bi.getRGB(j, i));
-                colors[i * width + j] = new Color(new Color(bi.getRGB(j, i)).getGreen());
-                pict[i*width + j] = colors[i * width + j].getRGB();
-//                pict[i*width + j] = bi.getRGB(j, i) & 0xFFFFFF; // 0xFFFFFF: записываем только 3 младших байта RGB
+//                colors[i * width + j] = new Color(new Color(bi.getRGB(j, i)).getGreen());
+//                pict[i*width + j] = colors[i * width + j].getRGB();
+                pict[i*width + j] = bi.getRGB(j, i) & 0xFFFFFF; // 0xFFFFFF: записываем только 3 младших байта RGB
             }
         return pict;
     }
@@ -105,7 +144,8 @@ public class CoolImage {
     // Собственно запись файла (общая для всех форматов часть).
     public void saveToImageFile(ImageWriter iw, String fileName) throws IOException {
         iw.setOutput(new FileImageOutputStream(new File(fileName)));
-        iw.write(copyToBufferedImage());
+        this.pixels = copyFromBufferedImage(this.bufferedImage);
+        iw.write(copyToBufferedImage(this.pixels));
         ((FileImageOutputStream) iw.getOutput()).close();
     }
 
@@ -145,9 +185,7 @@ public class CoolImage {
                 System.out.println();
             }
     }
-//        public int[] getBrightHist() {
-//
-//        }
+
 
     // изменяем интесивность зеленого цвета
     public void addColorGreenChannel(int delta) {
@@ -161,4 +199,9 @@ public class CoolImage {
                 pixels[i * width + j] = pixels[i * width + j] & 0xFF00FF | (newGreen << 8);
             }
     }
+
+    public int[][] getPixelsMatrix() {
+        return pixelsMatrix;
+    }
+
 }

@@ -19,7 +19,7 @@
    <children>
       <AnchorPane prefHeight="478.0" prefWidth="549.0">
          <children>
-            <TextField fx:id="imagePathTf" layoutX="34.0" layoutY="66.0" prefHeight="25.0" prefWidth="366.0" promptText="Image path &quot;C:/paba1019/Descktop/image.jpeg" />
+            <TextField fx:id="imagePathTf" layoutX="34.0" layoutY="66.0" prefHeight="25.0" prefWidth="366.0" promptText="Image path &quot;C:/paba1019/Descktop/image.jpeg" text="C:\Users\Pavel\Desktop\nirs\fxNirs\NIRS\src\main\resources\testImages\lena2.png" />
             <Button fx:id="openImageBtn" layoutX="413.0" layoutY="66.0" mnemonicParsing="false" onAction="#openImage" text="Open image" />
             <ImageView fx:id="mainImgView" fitHeight="274.0" fitWidth="366.0" layoutX="34.0" layoutY="125.0" pickOnBounds="true" preserveRatio="true" />
             <Separator layoutY="107.0" prefHeight="4.0" prefWidth="517.0" />
