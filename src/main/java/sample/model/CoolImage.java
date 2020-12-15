@@ -8,6 +8,7 @@ import com.sun.imageio.plugins.png.PNGImageWriter;
 import com.sun.imageio.plugins.png.PNGImageWriterSpi;
 import sample.utils.Utils;
 
+import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.ImageWriter;
@@ -39,7 +40,7 @@ public class CoolImage {
 
     // Конструктор - создание изображения из файла
     public CoolImage(String fileName) throws IOException {
-        BufferedImage img = readFromFile(fileName);
+        BufferedImage img = readFromTifFile(fileName);
         this.height = img.getHeight();
         this.width  = img.getWidth();
         this.pixels = copyFromBufferedImage(img);
@@ -67,6 +68,11 @@ public class CoolImage {
         BufferedImage  bi = r.read(0, new ImageReadParam());
         ((FileImageInputStream) r.getInput()).close();
         return bi;
+    }
+
+    public BufferedImage readFromTifFile(String fileName) throws IOException {
+        BufferedImage image = ImageIO.read(new File(fileName));
+        return image;
     }
 
     public int[][] pixelsToNorm(int[][] pixelsMatrix) {
