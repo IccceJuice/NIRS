@@ -2,15 +2,28 @@ package sample.controller;
 
 import com.sun.imageio.plugins.jpeg.JPEGImageReaderSpi;
 import com.sun.imageio.plugins.png.PNGImageReader;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.fxml.Initializable;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.chart.BarChart;
+import javafx.scene.chart.CategoryAxis;
+import javafx.scene.chart.NumberAxis;
+import javafx.scene.chart.XYChart;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import sample.model.algorithms.AVGAlgorithm;
+import sample.model.algorithms.Algorithm;
 import sample.model.CoolImage;
+import sample.model.algorithms.LBPAlgorithm;
 import sample.utils.Utils;
 
 import javax.imageio.ImageReadParam;
@@ -22,28 +35,28 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.ResourceBundle;
+import java.util.*;
 
 public class MainController implements Initializable {
 
     public TextField tfWinSize;
     public Button btnReadHist;
     public TextField tfHistPath;
+    public Button printHistBtn;
+    public TextField pixIndTf;
+    public ComboBox<String> algorithmBox;
     CoolImage coolImage;
 
     public TextField imagePathTf;
     public Button openImageBtn;
     public ImageView mainImgView;
-    public Button highlightContour;
     FileChooser fileChooser;
     FileChooser histFileChooser;
     Stage primaryStage;
     private Desktop desktop = Desktop.getDesktop();
-    String resultImgDir = "C:\\Users\\Pavel\\Desktop\\nirs\\fxNirs\\NIRS\\src\\main\\resources\\resultImages";
-    String testImgDir = "C:\\Users\\Pavel\\Desktop\\nirs\\fxNirs\\NIRS\\src\\main\\resources\\testImages";
-    String resultHistDir = "C:\\Users\\Pavel\\Desktop\\nirs\\fxNirs\\NIRS\\src\\main\\resources\\resultHistograms";
+    String resultImgDir = "D:\\desktop\\Univer\\nirs\\fxNirs\\NIRS\\src\\main\\resources\\resultImages";
+    String testImgDir = "D:\\desktop\\Univer\\nirs\\fxNirs\\NIRS\\src\\main\\resources\\testImages";
+    String resultHistDir = "D:\\desktop\\Univer\\nirs\\fxNirs\\NIRS\\src\\main\\resources\\resultHistograms";
     String imgName;
     String histName;
     Map<Short, Short>[] histograms;
@@ -57,6 +70,10 @@ public class MainController implements Initializable {
         histFileChooser.setInitialDirectory(new File(resultHistDir));
         tfWinSize.setText("15");
 
+        ObservableList<String> langs = FXCollections.observableArrayList("AVGAlgorithm", "LBPAlgorithm");
+        algorithmBox.setItems(langs);
+        algorithmBox.setValue("AVGAlgorithm");
+//        algorithmBox.setOnAction(event -> lbl.setText(langsChoiceBox.getValue()));
     }
 
     public void setPrimaryStage(Stage primaryStage) {
@@ -86,28 +103,18 @@ public class MainController implements Initializable {
         }
     }
 
-    public void highlightContour(ActionEvent actionEvent) throws IOException {
-        int[][] newIntPixels = coolImage.getPixelsMatrix();
-        int[][] kernel = new int[][] {{0, 1, 0}, {1, -4, 1}, {0, 1, 0}};
-        int[] newArrayPixels = processPixelsWithKernel(newIntPixels, kernel);
-        coolImage.copyToBufferedImage(newArrayPixels);
-        coolImage.saveAsPng(resultImgDir + "\\" + imgName);
+    public void process(ActionEvent actionEvent) throws IOException {
+        Algorithm algorithm = chooseAlgorithm(algorithmBox.getValue());
+        int[][] newIntPixels = coolImage.getHalftonePixelMatrix();
+        newIntPixels = algorithm.process(newIntPixels, 3);
+        Utils.saveAsPng(resultImgDir + "\\" + imgName, newIntPixels);
         mainImgView.setImage(new Image(pathToUrl(resultImgDir + "\\" + imgName)));
     }
 
-    public void collectHistograms (ActionEvent actionEvent) throws IOException {
-        int[][] newIntPixels = coolImage.getPixelsMatrix();
+    public void collectHistograms(ActionEvent actionEvent) throws IOException {
+        int[][] newIntPixels = coolImage.getHalftonePixelMatrix();
         histograms = collectHistogramsFromPixels(newIntPixels);
         Utils.saveHistogramsToFile(histograms, resultHistDir + "\\" + histName);
-    }
-
-
-
-    private int[] processPixelsWithKernel(int[][] pixels, int[][] kernel) {
-        pixels = Utils.pixelsToNorm(pixels);
-        pixels = Utils.filterWindowTreatment(pixels, kernel);
-        pixels = Utils.pixelsFromNormalPixels(pixels);
-        return Utils.matrixToArray(pixels);
     }
 
     private HashMap<Short, Short>[] collectHistogramsFromPixels(int[][] pixels) throws IOException {
@@ -122,22 +129,6 @@ public class MainController implements Initializable {
         return histograms;
     }
 
-
-
-
-
-    private int[][] thresholding(int[][] pixels, int threshold) {
-        for (int i = 0; i < pixels.length; i++) {
-            for (int j = 0;j < pixels.length; j++) {
-                if (pixels[i][j] < threshold) pixels[i][j] = 0;
-                else pixels[i][j] = 255;
-            }
-        }
-        return pixels;
-    }
-
-
-
     public BufferedImage readFromFile(String fileName) throws IOException {
         ImageReader r  = new PNGImageReader(new JPEGImageReaderSpi());
         r.setInput(new FileImageInputStream(new File(fileName)));
@@ -146,12 +137,10 @@ public class MainController implements Initializable {
         return bi;
     }
 
-
     private String pathToUrl(String path) throws MalformedURLException {
         File file = new File(path);
         return file.toURI().toURL().toString();
     }
-
 
     public void readHistogramsAction(ActionEvent actionEvent) {
         File file = histFileChooser.showOpenDialog(primaryStage);
@@ -168,6 +157,59 @@ public class MainController implements Initializable {
             } catch (ClassNotFoundException e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    public void printHist(ActionEvent actionEvent) {
+        CategoryAxis xAxis = new CategoryAxis();
+        int xInd = Integer.valueOf(pixIndTf.getText());
+//        int yInd = Integer.valueOf(pixIndTf.getText().split(",")[1]);
+        xAxis.setLabel("Histogram №" + xInd);
+
+        NumberAxis yAxis = new NumberAxis();
+        yAxis.setLabel("Count");
+
+        // Create a BarChart
+        BarChart<String, Number> barChart = new BarChart<String, Number>(xAxis, yAxis);
+
+        // Series 1 - Data of 2014
+        XYChart.Series<String, Number> dataSeries1 = new XYChart.Series<String, Number>();
+        HashMap<Short, Short> d = (HashMap<Short, Short>) histograms[xInd];
+        Map<Short, Short> sortedMap = new TreeMap<Short, Short>();
+        sortedMap.putAll(d);
+        for (Map.Entry entry: sortedMap.entrySet()) {
+            dataSeries1.getData().add(new XYChart.Data<String, Number>(String.valueOf(entry.getKey()), (short) entry.getValue()));
+        }
+
+        // Add Series to BarChart.
+        barChart.getData().add(dataSeries1);
+        barChart.setTitle("Histogram");
+
+        VBox vbox = new VBox(barChart);
+
+        Scene scene = new Scene(vbox, 400, 200);
+
+        Stage imageStage = new Stage();
+        imageStage.setTitle(imgName);
+        imageStage.setScene(scene);
+
+        openInAWindow(imageStage, vbox, false);
+    }
+
+    public static void openInAWindow(Stage stage, Parent parent, boolean resizable){
+        stage.setResizable(resizable);
+        stage.show();
+        stage.setMinHeight(stage.getHeight());
+        stage.setMinWidth(stage.getWidth());
+    }
+
+    private Algorithm chooseAlgorithm(String algByChooseBox) {
+        switch (algByChooseBox) {
+            case "LBPAlgorithm" :
+                return new LBPAlgorithm();
+            case "AVGAlgorithm" :
+                return new AVGAlgorithm();
+            default: return new AVGAlgorithm();
         }
     }
 }

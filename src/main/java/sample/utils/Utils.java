@@ -1,6 +1,16 @@
 package sample.utils;
 
+import com.sun.imageio.plugins.jpeg.JPEGImageWriter;
+import com.sun.imageio.plugins.jpeg.JPEGImageWriterSpi;
+import com.sun.imageio.plugins.png.PNGImageWriter;
+import com.sun.imageio.plugins.png.PNGImageWriterSpi;
+
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.FileImageOutputStream;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.*;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -30,62 +40,25 @@ public class Utils {
         return array;
     }
 
-    public static double[][] slidingWindowTreatment(double[][] matrix, int windowSize) {
-        double sum = 0;
-        double abs = 0;
-        double[][] newMatrix = new double[matrix.length][matrix.length];
-        matrix = matrixExpansionsZeros(matrix, windowSize/2);
-        for (int i = 0; i < newMatrix.length; i++) {
-            for (int j = 0; j < newMatrix.length; j++) {
-                sum = 0;
-                for (int pi = i; pi < i + windowSize; pi++) {
-                    for (int pj = j; pj < j + windowSize; pj++) {
-                        sum += matrix[pi][pj];
-                    }
-                    abs = sum/(windowSize*windowSize);
-                }
-                newMatrix[i][j] = abs;
-            }
-        }
-        return newMatrix;
-    }
-
     public static HashMap<Short, Short>[] slidingWindowForHistograms(double[][] matrix, int windowSize) {
         int matrixSize = matrix.length;
         double[][] tempWinMatrix = new double[windowSize][windowSize];
         matrix = matrixExpansionsZeros(matrix, windowSize/2);
-        HashMap<Short, Short>[] histograms = new HashMap[256 * 256];
-        for (int i = 0; i < matrixSize; i++) {
-            for (int j = 0; j < matrixSize; j++) {
+        int countFields = matrixSize/windowSize * matrixSize/windowSize;
+        ArrayList<HashMap<Short, Short>> histograms = new ArrayList<>();
+        for (int i = 0; i < matrixSize; i+=windowSize) {
+            for (int j = 0; j < matrixSize; j+=windowSize) {
                 for (int pi = i; pi < i + windowSize; pi++) {
                     for (int pj = j; pj < j + windowSize; pj++) {
                         tempWinMatrix[pi - i][pj - j] = matrix[pi][pj];
                     }
                 }
-                histograms[i * matrixSize + j] = Utils.createHistFromArray(Utils.matrixRoundToShort(tempWinMatrix));
-
+                histograms.add(Utils.createHistFromWindow(Utils.matrixRoundToShort(tempWinMatrix)));
             }
         }
-        return histograms;
-    }
-
-    public static double[][] filterWindowTreatment(double[][] matrix, double[][] kernel) {
-        double sum = 0;
-        int windowSize = kernel.length;
-        double[][] newMatrix = new double[matrix.length][matrix.length];
-        matrix = matrixExpansionsZeros(matrix, windowSize/2);
-        for (int i = 0; i < newMatrix.length; i++) {
-            for (int j = 0; j < newMatrix.length; j++) {
-                sum = 0;
-                for (int pi = 0; pi < windowSize; pi++) {
-                    for (int pj = 0; pj < windowSize; pj++) {
-                        sum += matrix[i + pi][j + pj] * kernel[pi][pj];
-                    }
-                }
-                newMatrix[i][j] = Math.abs(sum);
-            }
-        }
-        return newMatrix;
+        HashMap<Short, Short>[] arr = new HashMap[countFields];
+        System.arraycopy(histograms.toArray(), 0, arr, 0, countFields);
+        return arr;
     }
 
     public static int[][] filterWindowTreatment(int[][] matrix, int[][] kernel) {
@@ -117,7 +90,6 @@ public class Utils {
         return newMatrix;
     }
 
-
     /**
      *
      * @param matrix - расширяемая матрица
@@ -144,15 +116,6 @@ public class Utils {
         return newMatrix;
     }
 
-    public static void printMatrix(double[][] matrix) {
-        for (int i = 0; i < matrix.length; i++) {
-            for (int j = 0; j < matrix.length; j++) {
-                System.out.print(matrix[i][j] + " ");
-            }
-            System.out.println();
-        }
-    }
-
     public static void printMatrix(int[][] matrix) {
         for (int i = 0; i < matrix.length; i++) {
             for (int j = 0; j < matrix.length; j++) {
@@ -161,7 +124,7 @@ public class Utils {
             System.out.println();
         }
     }
-    public static int[][] convertArrayToMatrix(int[] array, int sideLength) {
+    public static int[][] arrayToMatrix(int[] array, int sideLength) {
         int[][] matrix = new int[sideLength][sideLength];
         for (int i = 0; i < sideLength; i++) {
             for (int j = 0; j < sideLength; j++) {
@@ -221,7 +184,7 @@ public class Utils {
         }
     }
 
-    public static HashMap createHistFromArray(short[][] winValues) {
+    public static HashMap createHistFromWindow(short[][] winValues) {
         int winSize = winValues.length;
         HashMap<Short, Short> map = new HashMap<>();
         for (int i = 0; i < winSize; i++) {
@@ -252,4 +215,45 @@ public class Utils {
         return histograms;
     }
 
+    public static void saveToImageFile(ImageWriter iw, String fileName, int[][] pixelMatrix) throws IOException {
+        iw.setOutput(new FileImageOutputStream(new File(fileName)));
+//        this.pixels = copyFromBufferedImage(this.bufferedImage);
+
+        iw.write(copyToBufferedImage(matrixToArray(pixelsFromNormalPixels(pixelMatrix))));
+        ((FileImageOutputStream) iw.getOutput()).close();
+    }
+
+    // Формирование массива пикселей из BufferedImage
+    public static int[] copyFromBufferedImage(BufferedImage bi)  {
+        int size = bi.getHeight();
+        int[] pict = new int[size*size];
+        for (int i = 0; i < size; i++)
+            for (int j = 0; j < size; j++) {
+                pict[i*size + j] = bi.getRGB(j, i) & 0xFFFFFF; // 0xFFFFFF: записываем только 3 младших байта RGB
+            }
+        return pict;
+    }
+
+    // Запись изображения в jpeg-формате
+    public static void saveAsJpeg(String fileName, int[][] pixelMatrix) throws IOException {
+        ImageWriter writer = new JPEGImageWriter(new JPEGImageWriterSpi());
+        saveToImageFile(writer, fileName, pixelMatrix);
+    }
+
+    // Запись изображения в png-формате (другие графические форматы по аналогии)
+    public static void saveAsPng(String fileName, int[][] pixelMatrix) throws IOException {
+        ImageWriter writer = new PNGImageWriter(new PNGImageWriterSpi());
+        saveToImageFile(writer, fileName, pixelMatrix);
+    }
+
+    // Формирование BufferedImage из массива pixels
+    public static BufferedImage copyToBufferedImage(int[] pixels)  {
+        int size = (int) Math.sqrt(pixels.length);
+        BufferedImage bi = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++)
+                bi.setRGB(j, i, pixels[i * size + j]);
+        }
+        return bi;
+    }
 }
