@@ -20,15 +20,18 @@ import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import org.apache.commons.lang3.ArrayUtils;
 import sample.model.algorithms.AVGAlgorithm;
 import sample.model.algorithms.Algorithm;
 import sample.model.CoolImage;
 import sample.model.algorithms.LBPAlgorithm;
+import sample.model.algorithms.LPDPAlgorithm;
 import sample.utils.Utils;
 
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.FileImageInputStream;
+import javax.xml.stream.events.EntityReference;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -43,8 +46,10 @@ public class MainController implements Initializable {
     public Button btnReadHist;
     public TextField tfHistPath;
     public Button printHistBtn;
-    public TextField pixIndTf;
+    public TextField tfPixInd_I;
+    public TextField tfPixInd_J;
     public ComboBox<String> algorithmBox;
+    public Button btnPrntPerHist;
     CoolImage coolImage;
 
     public TextField imagePathTf;
@@ -59,8 +64,9 @@ public class MainController implements Initializable {
     String resultHistDir = "D:\\desktop\\Univer\\nirs\\fxNirs\\NIRS\\src\\main\\resources\\resultHistograms";
     String imgName;
     String histName;
-    Map<Short, Short>[] histograms;
-
+    short[] histograms;
+    int[][] proceedImg;
+    short[] perceptHist;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -70,7 +76,7 @@ public class MainController implements Initializable {
         histFileChooser.setInitialDirectory(new File(resultHistDir));
         tfWinSize.setText("15");
 
-        ObservableList<String> langs = FXCollections.observableArrayList("AVGAlgorithm", "LBPAlgorithm");
+        ObservableList<String> langs = FXCollections.observableArrayList("AVGAlgorithm", "LBPAlgorithm", "LPDPAlgorithm");
         algorithmBox.setItems(langs);
         algorithmBox.setValue("AVGAlgorithm");
 //        algorithmBox.setOnAction(event -> lbl.setText(langsChoiceBox.getValue()));
@@ -106,22 +112,28 @@ public class MainController implements Initializable {
     public void process(ActionEvent actionEvent) throws IOException {
         Algorithm algorithm = chooseAlgorithm(algorithmBox.getValue());
         int[][] newIntPixels = coolImage.getHalftonePixelMatrix();
-        newIntPixels = algorithm.process(newIntPixels, 3);
+
+        newIntPixels = algorithm.process(newIntPixels, 5);
+        proceedImg = algorithm.process(newIntPixels, 5);
         Utils.saveAsPng(resultImgDir + "\\" + imgName, newIntPixels);
         mainImgView.setImage(new Image(pathToUrl(resultImgDir + "\\" + imgName)));
     }
 
     public void collectHistograms(ActionEvent actionEvent) throws IOException {
         int[][] newIntPixels = coolImage.getHalftonePixelMatrix();
-        histograms = collectHistogramsFromPixels(newIntPixels);
+        histograms = collectHistogramsFromPixels(proceedImg);
         Utils.saveHistogramsToFile(histograms, resultHistDir + "\\" + histName);
+        if (histograms.length != 0) {
+            printHistBtn.setDisable(false);
+            btnPrntPerHist.setDisable(false);
+        }
     }
 
-    private HashMap<Short, Short>[] collectHistogramsFromPixels(int[][] pixels) throws IOException {
+    private short[] collectHistogramsFromPixels(int[][] pixels) throws IOException {
         pixels = Utils.pixelsToNorm(pixels);
         double[][] doublePixels = Utils.intToDoubleMatrix(pixels);
         int winSize = tfWinSize.getText().isEmpty() ? 15 : Integer.valueOf(tfWinSize.getText());
-        HashMap<Short, Short>[] histograms = Utils.slidingWindowForHistograms(doublePixels, winSize);
+        short[] histograms = Utils.slidingWindowForHistograms(doublePixels, winSize);
 //        for (Map.Entry entry: histograms.entrySet()) {
 //            Utils.printMap((HashMap<Number, Number>) entry.getValue());
 //            System.out.println();
@@ -162,9 +174,12 @@ public class MainController implements Initializable {
 
     public void printHist(ActionEvent actionEvent) {
         CategoryAxis xAxis = new CategoryAxis();
-        int xInd = Integer.valueOf(pixIndTf.getText());
+        int pi = Integer.valueOf(tfPixInd_I.getText());
+        int pj = Integer.valueOf(tfPixInd_J.getText());
 //        int yInd = Integer.valueOf(pixIndTf.getText().split(",")[1]);
-        xAxis.setLabel("Histogram №" + xInd);
+        int winSize = tfWinSize.getText().isEmpty() ? 15 : Integer.valueOf(tfWinSize.getText());
+        int areaInd = (pi/winSize)*(proceedImg.length/winSize) + (pj/winSize);
+        xAxis.setLabel("Histogram №" + areaInd);
 
         NumberAxis yAxis = new NumberAxis();
         yAxis.setLabel("Count");
@@ -174,12 +189,11 @@ public class MainController implements Initializable {
 
         // Series 1 - Data of 2014
         XYChart.Series<String, Number> dataSeries1 = new XYChart.Series<String, Number>();
-        HashMap<Short, Short> d = (HashMap<Short, Short>) histograms[xInd];
-        Map<Short, Short> sortedMap = new TreeMap<Short, Short>();
-        sortedMap.putAll(d);
-        for (Map.Entry entry: sortedMap.entrySet()) {
-            dataSeries1.getData().add(new XYChart.Data<String, Number>(String.valueOf(entry.getKey()), (short) entry.getValue()));
+        short[] curHist = ArrayUtils.subarray(histograms, areaInd*256, (areaInd + 1)*256);
+        for (int i = 0 ; i < 256; i++) {
+            dataSeries1.getData().add(new XYChart.Data<String, Number>(String.valueOf(i), curHist[i]));
         }
+
 
         // Add Series to BarChart.
         barChart.getData().add(dataSeries1);
@@ -209,7 +223,17 @@ public class MainController implements Initializable {
                 return new LBPAlgorithm();
             case "AVGAlgorithm" :
                 return new AVGAlgorithm();
+            case "LPDPAlgorithm" :
+                return new LPDPAlgorithm();
             default: return new AVGAlgorithm();
         }
+    }
+
+    public void openImgDirs(ActionEvent actionEvent) {
+    }
+
+    public void printPerceptHistogram(ActionEvent actionEvent) {
+        LinkedHashMap<Integer, Integer> map = Utils.getIndexesOfEqualWins(Utils.getHashHistogram(proceedImg, 15));
+        for (Map.Entry entry : map.entrySet()) System.out.println(entry.getKey() + " = " + entry.getValue());
     }
 }

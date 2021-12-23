@@ -23,4 +23,5 @@ public class AVGAlgorithm implements Algorithm{
         }
         return newMatrix;
     }
+
 }

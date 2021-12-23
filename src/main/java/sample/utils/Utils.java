@@ -4,15 +4,21 @@ import com.sun.imageio.plugins.jpeg.JPEGImageWriter;
 import com.sun.imageio.plugins.jpeg.JPEGImageWriterSpi;
 import com.sun.imageio.plugins.png.PNGImageWriter;
 import com.sun.imageio.plugins.png.PNGImageWriterSpi;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.math3.stat.correlation.Covariance;
+import org.apache.commons.math3.util.MathArrays;
+import org.apache.commons.math3.util.MathUtils;
+import org.opencv.core.Mat;
+import org.opencv.imgproc.Imgproc;
 
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.FileImageOutputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 public class Utils {
 
@@ -40,25 +46,25 @@ public class Utils {
         return array;
     }
 
-    public static HashMap<Short, Short>[] slidingWindowForHistograms(double[][] matrix, int windowSize) {
+    public static short[] slidingWindowForHistograms(double[][] matrix, int windowSize) {
         int matrixSize = matrix.length;
         double[][] tempWinMatrix = new double[windowSize][windowSize];
-        matrix = matrixExpansionsZeros(matrix, windowSize/2);
+//        matrix = matrixExpansionsZeros(matrix, windowSize/2);
         int countFields = matrixSize/windowSize * matrixSize/windowSize;
-        ArrayList<HashMap<Short, Short>> histograms = new ArrayList<>();
+        short[] resultHist = new short[countFields];
         for (int i = 0; i < matrixSize; i+=windowSize) {
             for (int j = 0; j < matrixSize; j+=windowSize) {
-                for (int pi = i; pi < i + windowSize; pi++) {
-                    for (int pj = j; pj < j + windowSize; pj++) {
+                for (int pi = i; pi < i + windowSize && pi < matrixSize; pi++) {
+                    for (int pj = j; pj < j + windowSize && pj < matrixSize; pj++) {
                         tempWinMatrix[pi - i][pj - j] = matrix[pi][pj];
                     }
                 }
-                histograms.add(Utils.createHistFromWindow(Utils.matrixRoundToShort(tempWinMatrix)));
+                resultHist = ArrayUtils.addAll(resultHist, Utils.createArrHistFromWindow(Utils.matrixRoundToShort(tempWinMatrix)));
             }
         }
-        HashMap<Short, Short>[] arr = new HashMap[countFields];
-        System.arraycopy(histograms.toArray(), 0, arr, 0, countFields);
-        return arr;
+//        HashMap<Short, Short>[] arr = new HashMap[countFields];
+//        System.arraycopy(histograms.toArray(), 0, arr, 0, countFields);
+        return resultHist;
     }
 
     public static int[][] filterWindowTreatment(int[][] matrix, int[][] kernel) {
@@ -117,6 +123,14 @@ public class Utils {
     }
 
     public static void printMatrix(int[][] matrix) {
+        for (int i = 0; i < matrix.length; i++) {
+            for (int j = 0; j < matrix.length; j++) {
+                System.out.print(matrix[i][j] + " ");
+            }
+            System.out.println();
+        }
+    }
+    public static void printMatrix(double[][] matrix) {
         for (int i = 0; i < matrix.length; i++) {
             for (int j = 0; j < matrix.length; j++) {
                 System.out.print(matrix[i][j] + " ");
@@ -201,17 +215,39 @@ public class Utils {
         return map;
     }
 
-    public static void saveHistogramsToFile(Map<Short, Short>[] histograms, String filePath) throws IOException {
+    public static short[] createArrHistFromWindow(short[][] winValues) {
+        int winSize = winValues.length;
+        short[] hist = new short[256];
+        for (int i = 0; i < winSize; i++) {
+            for(int j = 0; j < winSize; j++) {
+                hist[winValues[i][j]]++;
+            }
+        }
+        return hist;
+    }
+
+    public static String perceptHashForWindow(int[][] window, int midPixValue) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < window.length; i++) {
+            for (int j = 0; j < window.length; j++) {
+                sb.append(window[i][j] < midPixValue ? "0" : "1");
+            }
+        }
+        return sb.toString();
+    }
+
+
+    public static void saveHistogramsToFile(short[] histograms, String filePath) throws IOException {
         FileOutputStream fout = new FileOutputStream(filePath);
         ObjectOutputStream oos = new ObjectOutputStream(fout);
         oos.writeObject(histograms);
     }
 
-    public static HashMap<Short, Short>[] readHistogramsFromFile(String filePath) throws IOException, ClassNotFoundException {
+    public static short[] readHistogramsFromFile(String filePath) throws IOException, ClassNotFoundException {
         FileInputStream fout = new FileInputStream(filePath);
         ObjectInputStream oos = new ObjectInputStream(fout);
 //        Map<Short, Map<Short, Short>> histograms = (Map<Short, Map<Short, Short>>) oos.readObject();
-        HashMap<Short, Short>[] histograms = (HashMap<Short, Short>[]) oos.readObject();
+        short[] histograms = (short[]) oos.readObject();
         return histograms;
     }
 
@@ -221,6 +257,56 @@ public class Utils {
 
         iw.write(copyToBufferedImage(matrixToArray(pixelsFromNormalPixels(pixelMatrix))));
         ((FileImageOutputStream) iw.getOutput()).close();
+    }
+
+
+    /**
+     * @param matrix - расширенная матрица (с нулями вокруг)
+     * @param pi - i-ый индекс текущего пикселя (настоящий, а не нули расширенные)
+     * @param pj - j-ый индекс текущего пикселя (настоящий, а не нули расширенные)
+     * @param winSize - размер окна
+     * @return - матрица размерами winSize X winSize, с центральным пикселем [pi][pj]
+     */
+    public static int[][] getWindowFromMatrix(int[][] matrix, int pi, int pj, int winSize) {
+
+        int[][] newMatrix = new int[winSize][winSize];
+        for (int oi = pi - winSize/2, ni = 0; oi <= pi + winSize/2 && ni < winSize; oi++, ni++) {
+            for (int oj = pj - winSize/2, nj = 0; oj <= pj + winSize/2 && nj < winSize; oj++, nj++) {
+                newMatrix[ni][nj] = matrix[oi][oj];
+            }
+        }
+        return newMatrix;
+    }
+
+    public static int[][] convertDoubleToIntMat(double [][] mat) {
+        int[][] newMat = new int[mat.length][mat.length];
+        for (int i = 0; i < mat.length; i++) {
+            for (int j = 0; j < mat.length; j++) {
+                newMat[i][j] = (int) mat[i][j];
+            }
+        }
+        return newMat;
+    }
+
+    public static double[][] convertIntToDoubleMat(int [][] mat) {
+        double[][] newMat = new double[mat.length][mat.length];
+        for (int i = 0; i < mat.length; i++) {
+            for (int j = 0; j < mat.length; j++) {
+                newMat[i][j] = mat[i][j];
+            }
+        }
+        return newMat;
+    }
+
+    public static double[][] getWindowFromMatrix(double[][] matrix, int pi, int pj, int winSize) {
+
+        double[][] newMatrix = new double[winSize][winSize];
+        for (int oi = pi - winSize/2, ni = 0; oi <= pi + winSize/2 && ni < winSize; oi++, ni++) {
+            for (int oj = pj - winSize/2, nj = 0; oj <= pj + winSize/2 && nj < winSize; oj++, nj++) {
+                newMatrix[ni][nj] = matrix[oi][oj];
+            }
+        }
+        return newMatrix;
     }
 
     // Формирование массива пикселей из BufferedImage
@@ -256,4 +342,62 @@ public class Utils {
         }
         return bi;
     }
+
+    public static int[][] getWindowFromMatrix(int[][] matrix, int nWin, int winSize) {
+        int pi = (nWin/(matrix.length/winSize))*winSize + winSize/2;
+        int pj = (nWin%(matrix.length/winSize))*winSize + winSize/2;
+        int[][] newMatrix = new int[winSize][winSize];
+        for (int oi = pi - winSize/2, ni = 0; oi <= pi + winSize/2 && ni < winSize && oi < matrix.length; oi++, ni++) {
+            for (int oj = pj - winSize/2, nj = 0; oj <= pj + winSize/2 && nj < winSize && oj < matrix.length; oj++, nj++) {
+                newMatrix[ni][nj] = matrix[oi][oj];
+            }
+        }
+        return newMatrix;
+    }
+
+    public static String[] getHashHistogram (int[][] proceedMat, int winSize) {
+
+        int midPixValue = getMidFromMatrix(proceedMat);
+        int nWindows = proceedMat.length/winSize * proceedMat.length/winSize;
+        String[] hist = new String[nWindows];
+        for (int i = 0; i < nWindows; i++) {
+            hist[i] = perceptHashForWindow(getWindowFromMatrix(proceedMat, i, winSize), midPixValue);
+        }
+        return hist;
+    }
+
+    public static int getMidFromMatrix(int[][] matrix) {
+        int sum = 0;
+        for (int i = 0; i < matrix.length; i++) {
+            for (int j = 0; j < matrix.length; j++) {
+                sum += matrix[i][j];
+            }
+        }
+        return sum/(matrix.length*matrix.length);
+    }
+
+    public static LinkedHashMap<Integer, Integer> getIndexesOfEqualWins(String[] hashes) {
+        LinkedHashMap<Integer, Integer> map = new LinkedHashMap<>();
+        for (int i = 0; i < hashes.length; i++) {
+            String curHash = hashes[i];
+            for (int j = i + 1; j < hashes.length; j++) {
+                if (getHemmingDistance(curHash, hashes[j]) <= 5) map.put(i, j);
+            }
+        }
+        return map;
+    }
+
+    public static int getHemmingDistance(String s1, String s2) {
+        String ns1 = new BigInteger(s1, 2).toString(16);
+        String ns2 = new BigInteger(s2, 2).toString(16);
+        char[] arr1 = ns1.toCharArray();
+        char[] arr2 = ns2.toCharArray();
+        int distance = 0;
+        for (int i = 0; i < arr1.length && i < arr2.length; i++) {
+            if (arr1[i] != arr2[i]) distance++;
+        }
+        return distance;
+    }
+
+
 }
